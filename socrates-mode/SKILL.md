@@ -14,6 +14,7 @@ Run five phases in order: QUESTION, RESEARCH, PROVE, CHALLENGE, AUDIT.
 - `/socrates` full mode: questions first, then research and answer.
 - `/socrates fast` skip the questions, state your assumptions in one line, then research and answer.
 - `/socrates check` the user pastes a claim, text or AI answer. Fact-check it claim by claim with the same tags.
+- `/socrates recheck` run the source checker again on every source used in this conversation and update the tags.
 - `exit socrates` return to normal mode.
 
 ## Phase 1: QUESTION
@@ -62,17 +63,39 @@ If no search tool is available, say so in the first line and tag every claim as 
 
 ## Phase 3: PROVE
 
-Write the answer. Every important claim gets a tag in square brackets:
+Tags are not your opinion of your own work. A script checks the sources, and the tags come from its result.
 
-- [VERIFIED] you opened the source in this session. Give title, year and link.
-- [MEMORY] you know it but did not verify it now. The user should check it.
-- [WEAK] the evidence is thin, low quality, outdated or conflicting. Say why.
+Step A: collect the evidence.
+For every claim you want to support with a source, copy one exact quote from the page you opened (8 to 15 words, word for word, no paraphrase) and keep the exact URL.
 
-Also give each verified claim an evidence strength: High, Moderate or Low.
+Step B: run the source checker.
+This skill includes `scripts/verify_sources.py` (next to this SKILL.md). Write the claims to `sources.json`:
+
+```json
+[{"id": 1, "claim": "short claim", "url": "https://...", "quote": "exact words from the page"}]
+```
+
+Then run `python3 <skill folder>/scripts/verify_sources.py sources.json`. The script downloads every page itself and checks that the quote is on it. Run it as a visible tool call. Never simulate or summarize its output without running it.
+
+Step C: tag every important claim from the result:
+
+- [VERIFIED] the checker returned PASS. Give the quote, title, year and link.
+- [UNCHECKED] you read the page, but the checker could not reach it (blocked site, paywall, no network). Give the quote and link so the user can check.
+- [SNIPPET] you only saw a search result snippet or abstract, not the page.
+- [MEMORY] you know it but did not find a source now. The user should check it.
+- [WEAK] the evidence itself is thin, low quality, outdated or conflicting. Say why. Can be combined: [VERIFIED, WEAK].
+
+Checker results:
+- PARTIAL: copy the quote again exactly from the page and rerun once. Still PARTIAL: tag [UNCHECKED].
+- FAIL: the link is dead, the domain does not exist, or the quote is not on the page. Never tag it VERIFIED. Find a real source, or drop the source and tag the claim [MEMORY]. Tell the user which source failed.
+- If the checker cannot run at all (no code execution) or reaches no page (network off), say so in one line at the top, tag sourced claims [UNCHECKED], and suggest turning on "Allow network egress" in Settings > Capabilities.
+
+Also give each sourced claim an evidence strength: High, Moderate or Low.
 
 Rules:
 - Never invent studies, authors, journals, DOIs, numbers, quotes or links. If you cannot find a source, write "No source found."
-- Never upgrade a tag. A MEMORY claim stays MEMORY even if you feel sure.
+- Never upgrade a tag. A MEMORY claim stays MEMORY even if you feel sure. Only a PASS from the checker makes a claim VERIFIED.
+- Keep quotes short (under 15 words) and exact.
 - Every number needs a source. No fake precision.
 - Translate effects into real terms. Prefer absolute numbers ("from 4 in 100 to 3 in 100") over relative ones ("25% lower risk"), and say whether the effect is big enough to matter in practice.
 - Do not turn correlation into causation. Say which one the evidence shows.
@@ -102,7 +125,7 @@ End every answer with:
 ## Phase 5: AUDIT
 
 Before sending, check silently:
-- Does every [VERIFIED] claim have a source I actually opened?
+- Does every [VERIFIED] claim have a PASS from the checker in this conversation?
 - Did I search for evidence against my answer?
 - Is any number or citation unsourced?
 - Is my overall confidence honest?
@@ -116,9 +139,12 @@ Short answer: 2-3 sentences.
 Overall confidence: High / Moderate / Low, and why in one line.
 
 Evidence
-1. Claim [VERIFIED, High] (Title, year, link)
-2. Claim [MEMORY]
-3. Claim [WEAK] (why)
+1. Claim [VERIFIED, High] "exact quote" (Title, year, link)
+2. Claim [UNCHECKED] "exact quote" (Title, year, link) why it could not be checked
+3. Claim [MEMORY]
+4. Claim [WEAK] (why)
+
+Source check: PASS x, PARTIAL x, FAIL x, UNCHECKED x (from the checker), and the name of any source that failed.
 
 My take: your reasoning, clearly marked as yours.
 
